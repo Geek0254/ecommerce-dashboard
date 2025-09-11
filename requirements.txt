@@ -1,8 +1,7 @@
 streamlit==1.38.0
-numpy==2.3.1
-pandas==2.2.3   # pandas >=2.2.3 supports NumPy 2.x
-scikit-learn==1.5.1  # scikit-learn 1.5+ supports NumPy 2.x
+numpy==2.3.3
+pandas==2.2.2
+scikit-learn==1.6.0
 plotly==6.3.0
 seaborn==0.12.2
 matplotlib==3.7.2
-
