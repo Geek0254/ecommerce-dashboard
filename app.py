@@ -53,6 +53,27 @@ def load_data():
     try:
         # Try to load from the current directory
         df = pd.read_csv('E-commerce Customer Behavior.csv')
+
+        # Add data validation 
+        initial_count = len(df)
+
+        # Filter out rows with missing or invalid satisfaction levels
+        df = df.dropna(subset=['Satisfaction Level'])
+        df = df[df['Satisfaction Level'].isin(['Satisfied', 'Neutral', 'Unsatisfied'])]
+
+        # Additional validation 
+        df = df[
+            (df['Age'] > 0) & (df['Age'] < 150) &
+            (df['Total Spend'] >= 0) &
+            (df['Items Purchased'] >= 0) &
+            (df['Average Rating'] >= 0) & (df['Average Rating'] <= 5) &
+            (df['Days Since Last Purchase'] >= 0)
+        ]
+
+        filtered_count = len(df)
+        if initial_count != filtered_count:
+            st.info(f"Data Quality: Filtered out {initial_count - filtered_count} invalid records. Using {filtered_count} valid customer records for analysis.")
+
     except FileNotFoundError:
         # Create sample data if file not found (for demo purposes)
         st.warning("Dataset file not found. Using sample data for demonstration.")
