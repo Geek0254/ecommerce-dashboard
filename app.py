@@ -177,6 +177,129 @@ df = create_customer_segments(df)
 # Train model
 model, feature_names, model_r2, model_mae, encoders = train_spending_model(df)
 
+def create_api_endpoints():
+    """Create comprehensive API endpoints for external consumption"""
+    
+    # Check if API mode is requested
+    query_params = st.experimental_get_query_params()
+    
+    if query_params.get('api') == ['true']:
+        endpoint = query_params.get('endpoint', ['overview'])[0]
+        
+        api_data = {}
+        
+        if endpoint == 'overview' or endpoint == 'all':
+            api_data['overview'] = {
+                "total_customers": int(len(df)),
+                "total_revenue": float(df['Total Spend'].sum()),
+                "average_order_value": float(df['Total Spend'].mean()),
+                "satisfaction_rate": float((df['Satisfaction Level'] == 'Satisfied').mean() * 100),
+                "timestamp": pd.Timestamp.now().isoformat()
+            }
+        
+        if endpoint == 'segments' or endpoint == 'all':
+            segment_data = df.groupby('Customer_Segment').agg({
+                'Customer ID': 'count',
+                'Total Spend': ['mean', 'sum'],
+                'Items Purchased': 'mean',
+                'Days Since Last Purchase': 'mean',
+                'Average Rating': 'mean'
+            }).round(2)
+            
+            segments = {}
+            for segment in segment_data.index:
+                segments[segment] = {
+                    "customer_count": int(segment_data.loc[segment, ('Customer ID', 'count')]),
+                    "avg_spend": float(segment_data.loc[segment, ('Total Spend', 'mean')]),
+                    "total_revenue": float(segment_data.loc[segment, ('Total Spend', 'sum')]),
+                    "avg_items": float(segment_data.loc[segment, ('Items Purchased', 'mean')]),
+                    "avg_days_since": float(segment_data.loc[segment, ('Days Since Last Purchase', 'mean')]),
+                    "avg_rating": float(segment_data.loc[segment, ('Average Rating', 'mean')])
+                }
+            
+            api_data['segments'] = segments
+        
+        if endpoint == 'revenue' or endpoint == 'all':
+            discount_effect = df.groupby('Discount Applied')['Total Spend'].mean()
+            discount_lift = ((discount_effect[True] - discount_effect[False]) / discount_effect[False] * 100) if True in discount_effect.index and False in discount_effect.index else 0
+            
+            city_revenue = df.groupby('City')['Total Spend'].sum().to_dict()
+            membership_revenue = df.groupby('Membership Type')['Total Spend'].mean().to_dict()
+            
+            api_data['revenue'] = {
+                "discount_effectiveness": float(discount_lift),
+                "revenue_by_city": {str(k): float(v) for k, v in city_revenue.items()},
+                "avg_spend_by_membership": {str(k): float(v) for k, v in membership_revenue.items()},
+                "correlation_items_spend": float(df['Items Purchased'].corr(df['Total Spend']))
+            }
+        
+        if endpoint == 'satisfaction' or endpoint == 'all':
+            satisfaction_dist = df['Satisfaction Level'].value_counts().to_dict()
+            rating_by_segment = df.groupby('Customer_Segment')['Average Rating'].mean().to_dict()
+            
+            api_data['satisfaction'] = {
+                "distribution": {str(k): int(v) for k, v in satisfaction_dist.items()},
+                "average_rating": float(df['Average Rating'].mean()),
+                "rating_by_segment": {str(k): float(v) for k, v in rating_by_segment.items()}
+            }
+        
+        if endpoint == 'predictions' or endpoint == 'all':
+            feature_importance_dict = dict(zip(feature_names, model.feature_importances_.tolist()))
+            
+            # CLV calculation
+            clv_data = df.groupby('Customer_Segment').agg({
+                'Total Spend': 'mean',
+                'Days Since Last Purchase': 'mean'
+            })
+            clv_estimates = (clv_data['Total Spend'] * (365 / clv_data['Days Since Last Purchase'].clip(lower=1))).to_dict()
+            
+            # Model predictions for accuracy
+            le_gender, le_city, le_membership, le_satisfaction = encoders
+            df_model = df.copy()
+            df_model['Gender_encoded'] = le_gender.transform(df_model['Gender'])
+            df_model['City_encoded'] = le_city.transform(df_model['City'])
+            df_model['Membership_encoded'] = le_membership.transform(df_model['Membership Type'])
+            df_model['Satisfaction_encoded'] = le_satisfaction.transform(df_model['Satisfaction Level'])
+            df_model['Discount_numeric'] = df_model['Discount Applied'].astype(int)
+            
+            X = df_model[feature_names]
+            predictions = model.predict(X)
+            accuracy = r2_score(df['Total Spend'], predictions)
+            
+            api_data['predictions'] = {
+                "model_accuracy": float(accuracy),
+                "model_mae": float(model_mae),
+                "feature_importance": {str(k): float(v) for k, v in feature_importance_dict.items()},
+                "clv_by_segment": {str(k): float(v) for k, v in clv_estimates.items()}
+            }
+        
+        if endpoint == 'insights' or endpoint == 'all':
+            top_segment = df.groupby('Customer_Segment')['Total Spend'].sum().idxmax()
+            best_membership = df.groupby('Membership Type')['Total Spend'].mean().idxmax()
+            top_city = df.groupby('City')['Total Spend'].sum().idxmax()
+            
+            api_data['insights'] = {
+                "top_revenue_segment": str(top_segment),
+                "best_membership_type": str(best_membership),
+                "top_revenue_city": str(top_city),
+                "churn_risk_customers": int(len(df[df['Days Since Last Purchase'] > 180])),
+                "high_value_customers": int(len(df[df['Total Spend'] > df['Total Spend'].quantile(0.8)])),
+                "recommendations": [
+                    f"Focus on {top_segment} segment for highest revenue impact",
+                    f"Promote {best_membership} membership tier for better AOV",
+                    f"Expand marketing in {top_city} for geographic growth",
+                    "Implement churn prevention for at-risk customers",
+                    "Develop loyalty programs for high-value customers"
+                ]
+            }
+        
+        # Return JSON response and stop normal app rendering
+        st.json(api_data)
+        st.stop()
+
+# Call the API function
+create_api_endpoints()
+
 # Main title
 st.markdown('<h1 class="main-header">🛒 E-commerce Customer Analytics Dashboard</h1>', unsafe_allow_html=True)
 
