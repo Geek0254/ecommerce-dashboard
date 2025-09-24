@@ -178,13 +178,30 @@ df = create_customer_segments(df)
 model, feature_names, model_r2, model_mae, encoders = train_spending_model(df)
 
 def create_api_endpoints():
-    """Create comprehensive API endpoints for external consumption"""
+    """Create comprehensive API endpoints for external consumption with CORS support"""
     
     # Check if API mode is requested
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     
-    if query_params.get('api') == ['true']:
-        endpoint = query_params.get('endpoint', ['overview'])[0]
+    if query_params.get('api') == 'true':
+        endpoint = query_params.get('endpoint', 'overview')
+        
+        # Add CORS headers using Streamlit's HTML injection
+        st.markdown("""
+        <script>
+        // Add CORS headers to the response
+        if (window.parent && window.parent.postMessage) {
+            window.parent.postMessage({
+                type: 'cors-headers',
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                }
+            }, '*');
+        }
+        </script>
+        """, unsafe_allow_html=True)
         
         api_data = {}
         
@@ -293,11 +310,10 @@ def create_api_endpoints():
                 ]
             }
         
-        # Return JSON response and stop normal app rendering
+        # Return JSON with proper content type
         st.json(api_data)
         st.stop()
 
-# Call the API function
 create_api_endpoints()
 
 # Main title
